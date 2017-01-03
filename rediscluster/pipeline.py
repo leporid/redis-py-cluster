@@ -199,7 +199,7 @@ class StrictClusterPipeline(StrictRedisCluster):
         # if we have more commands to attempt, we've run into problems.
         # collect all the commands we are allowed to retry.
         # (MOVED, ASK, or connection errors or timeout errors)
-        attempt = sorted([c for c in attempt if isinstance(c.result, ERRORS_ALLOW_RETRY)], key=lambda x: x.position)
+        attempt = sorted([c for c in attempt if isinstance(c.result, ERRORS_ALLOW_RETRY) or c.result is None], key=lambda x: x.position)
         if attempt and allow_redirections:
             # RETRY MAGIC HAPPENS HERE!
             # send these remaing comamnds one at a time using `execute_command`
