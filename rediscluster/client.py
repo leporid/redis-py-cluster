@@ -5,7 +5,6 @@ import datetime
 import random
 import string
 import time
-from threading import Lock
 
 # rediscluster imports
 from .connection import ClusterConnectionPool, ClusterReadOnlyConnectionPool
@@ -190,9 +189,6 @@ class StrictRedisCluster(StrictRedis):
         self.response_callbacks = self.__class__.RESPONSE_CALLBACKS.copy()
         self.response_callbacks = dict_merge(self.response_callbacks, self.CLUSTER_COMMANDS_RESPONSE_CALLBACKS)
 
-        self.initializing = Lock()
-        self.init_counter = 0
-
     @classmethod
     def from_url(cls, url, db=None, skip_full_coverage_check=False, **kwargs):
         """
@@ -322,8 +318,7 @@ class StrictRedisCluster(StrictRedis):
         if node:
             return self._execute_command_on_nodes(node, *args, **kwargs)
 
-        self.initializing.acquire()
-        self.initializing.release()
+        self.connection_pool.nodes.wait_on_reinit()
 
         redirect_addr = None
         asking = False
@@ -363,24 +358,14 @@ class StrictRedisCluster(StrictRedis):
             except ClusterDownError as e:
                 self.connection_pool.disconnect()
                 self.connection_pool.reset()
-                current_counter = self.init_counter
-                with self.initializing:
-                    if self.init_counter == current_counter:
-                        self.connection_pool.nodes.initialize()
-                        self.init_counter += 1
-
+                self.connection_pool.nodes.reinitialize()
                 raise e
             except MovedError as e:
                 # Reinitialize on ever x number of MovedError.
                 # This counter will increase faster when the same client object
                 # is shared between multiple threads. To reduce the frequency you
                 # can set the variable 'reinitialize_steps' in the constructor.
-                current_counter = self.init_counter
-                with self.initializing:
-                    if self.init_counter == current_counter:
-                        self.connection_pool.nodes.initialize()
-                        self.init_counter += 1
-
+                self.connection_pool.nodes.reinitialize()
                 node = self.connection_pool.nodes.set_node(e.host, e.port, server_type='master')
                 self.connection_pool.nodes.slots[e.slot_id][0] = node
             except TryAgainError as e:

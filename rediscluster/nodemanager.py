@@ -2,6 +2,7 @@
 
 # python std lib
 import random
+from threading import Lock
 
 # rediscluster imports
 from .crc import crc16
@@ -37,6 +38,8 @@ class NodeManager(object):
         self.reinitialize_steps = reinitialize_steps or 25
         self._skip_full_coverage_check = skip_full_coverage_check
         self.nodemanager_follow_cluster = nodemanager_follow_cluster
+        self.initializing = Lock()
+        self.init_counter = 0
 
         if not self.startup_nodes:
             raise RedisClusterException("No startup nodes provided")
@@ -245,6 +248,17 @@ class NodeManager(object):
         self.nodes = nodes_cache
         self.populate_startup_nodes()
         self.reinitialize_counter = 0
+
+    def reinitialize(self):
+        current_counter = self.init_counter
+        with self.initializing:
+            if current_counter < self.init_counter:
+                self.initialize()
+                self.init_counter += 1
+
+    def wait_on_reinit(self):
+        self.initializing.acquire()
+        self.initializing.release()
 
     def increment_reinitialize_counter(self, ct=1):
         for i in range(1, ct):
