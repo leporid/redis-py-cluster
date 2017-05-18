@@ -5,6 +5,7 @@ import datetime
 import random
 import string
 import time
+from threading import Lock
 
 # rediscluster imports
 from .connection import ClusterConnectionPool, ClusterReadOnlyConnectionPool
@@ -189,6 +190,9 @@ class StrictRedisCluster(StrictRedis):
         self.response_callbacks = self.__class__.RESPONSE_CALLBACKS.copy()
         self.response_callbacks = dict_merge(self.response_callbacks, self.CLUSTER_COMMANDS_RESPONSE_CALLBACKS)
 
+        self.initializing = Lock()
+        self.init_counter = 0
+
     @classmethod
     def from_url(cls, url, db=None, skip_full_coverage_check=False, **kwargs):
         """
@@ -318,10 +322,8 @@ class StrictRedisCluster(StrictRedis):
         if node:
             return self._execute_command_on_nodes(node, *args, **kwargs)
 
-        # If set externally we must update it before calling any commands
-        if self.refresh_table_asap:
-            self.connection_pool.nodes.initialize()
-            self.refresh_table_asap = False
+        self.initializing.acquire()
+        self.initializing.release()
 
         redirect_addr = None
         asking = False
@@ -340,11 +342,7 @@ class StrictRedisCluster(StrictRedis):
                 r = self.connection_pool.get_random_connection()
                 try_random_node = False
             else:
-                if self.refresh_table_asap:
-                    # MOVED
-                    node = self.connection_pool.get_master_node_by_slot(slot)
-                else:
-                    node = self.connection_pool.get_node_by_slot(slot)
+                node = self.connection_pool.get_node_by_slot(slot)
                 r = self.connection_pool.get_connection_by_node(node)
 
             try:
@@ -365,7 +363,11 @@ class StrictRedisCluster(StrictRedis):
             except ClusterDownError as e:
                 self.connection_pool.disconnect()
                 self.connection_pool.reset()
-                self.refresh_table_asap = True
+                current_counter = self.init_counter
+                with self.initializing:
+                    if self.init_counter == current_counter:
+                        self.connection_pool.nodes.initialize()
+                        self.init_counter += 1
 
                 raise e
             except MovedError as e:
@@ -373,8 +375,11 @@ class StrictRedisCluster(StrictRedis):
                 # This counter will increase faster when the same client object
                 # is shared between multiple threads. To reduce the frequency you
                 # can set the variable 'reinitialize_steps' in the constructor.
-                self.refresh_table_asap = True
-                self.connection_pool.nodes.increment_reinitialize_counter()
+                current_counter = self.init_counter
+                with self.initializing:
+                    if self.init_counter == current_counter:
+                        self.connection_pool.nodes.initialize()
+                        self.init_counter += 1
 
                 node = self.connection_pool.nodes.set_node(e.host, e.port, server_type='master')
                 self.connection_pool.nodes.slots[e.slot_id][0] = node
