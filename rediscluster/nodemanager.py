@@ -219,9 +219,6 @@ class NodeManager(object):
                             if len(disagreements) > 5:
                                 raise RedisClusterException("startup_nodes could not agree on a valid slots cache. {0}".format(", ".join(disagreements)))
 
-                self.populate_startup_nodes()
-                self.refresh_table_asap = False
-
             if self._skip_full_coverage_check:
                 need_full_slots_coverage = False
             else:
@@ -246,6 +243,7 @@ class NodeManager(object):
         # Set the tmp variables to the real variables
         self.slots = tmp_slots
         self.nodes = nodes_cache
+        self.populate_startup_nodes()
         self.reinitialize_counter = 0
 
     def increment_reinitialize_counter(self, ct=1):
