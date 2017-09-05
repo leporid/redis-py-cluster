@@ -196,7 +196,7 @@ class NodeManager(object):
             for slot in cluster_slots:
                 master_node = slot[2]
 
-                if master_node[0] == '':
+                if master_node[0] in ('', '127.0.0.1'):
                     master_node[0] = node['host']
                 master_node[1] = int(master_node[1])
 
