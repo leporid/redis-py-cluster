@@ -366,8 +366,9 @@ class StrictRedisCluster(StrictRedis):
                 # is shared between multiple threads. To reduce the frequency you
                 # can set the variable 'reinitialize_steps' in the constructor.
                 self.connection_pool.nodes.reinitialize()
-                node = self.connection_pool.nodes.set_node(e.host, e.port, server_type='master')
-                self.connection_pool.nodes.slots[e.slot_id][0] = node
+                if 'readonly' not in self.connection_pool.nodes.connection_kwargs:
+                    node = self.connection_pool.nodes.set_node(e.host, e.port, server_type='master')
+                    self.connection_pool.nodes.slots[e.slot_id][0] = node
             except TryAgainError as e:
                 if ttl < self.RedisClusterRequestTTL / 2:
                     time.sleep(0.05)

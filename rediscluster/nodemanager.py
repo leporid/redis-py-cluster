@@ -3,6 +3,7 @@
 # python std lib
 import random
 from threading import Lock
+from collections import defaultdict
 
 # rediscluster imports
 from .crc import crc16
@@ -163,7 +164,7 @@ class NodeManager(object):
          and it could execute CLUSTER SLOTS command.
         """
         nodes_cache = {}
-        tmp_slots = {}
+        tmp_slots = defaultdict(list)
 
         all_slots_covered = False
         disagreements = []
@@ -174,6 +175,10 @@ class NodeManager(object):
         # With this option the client will attempt to connect to any of the previous set of nodes instead of the original set of nodes
         if self.nodemanager_follow_cluster:
             nodes = self.startup_nodes
+
+        for item in nodes:
+            self.set_node_name(item)
+        node_names = set(map(lambda x: x['name'], nodes))
 
         for node in nodes:
             try:
@@ -193,8 +198,10 @@ class NodeManager(object):
                 cluster_slots[0][2][0] = self.startup_nodes[0]['host']
 
             # No need to decode response because StrictRedis should handle that for us...
-            for slot in cluster_slots:
-                master_node = slot[2]
+            for info in cluster_slots:
+                start, end = list(map(int, info[:2]))
+                master_node = info[2]
+                slave_nodes = info[3:]
 
                 if master_node[0] in ('', '127.0.0.1'):
                     master_node[0] = node['host']
@@ -203,15 +210,16 @@ class NodeManager(object):
                 node, node_name = self.make_node_obj(master_node[0], master_node[1], 'master')
                 nodes_cache[node_name] = node
 
-                for i in range(int(slot[0]), int(slot[1]) + 1):
+                for i in range(start, end + 1):
                     if i not in tmp_slots:
-                        tmp_slots[i] = [node]
-                        slave_nodes = [slot[j] for j in range(3, len(slot))]
+                        if 'readonly' not in self.connection_kwargs or node_name in node_names:
+                            tmp_slots[i] = [node]
 
                         for slave_node in slave_nodes:
                             target_slave_node, slave_node_name = self.make_node_obj(slave_node[0], slave_node[1], 'slave')
                             nodes_cache[slave_node_name] = target_slave_node
-                            tmp_slots[i].append(target_slave_node)
+                            if 'readonly' not in self.connection_kwargs or slave_node_name in node_names:
+                                tmp_slots[i].append(target_slave_node)
                     else:
                         # Validate that 2 nodes want to use the same slot cache setup
                         if tmp_slots[i][0]['name'] != node['name']:
