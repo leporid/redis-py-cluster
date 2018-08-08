@@ -4,6 +4,7 @@
 import random
 from threading import Lock
 from collections import defaultdict
+import socket
 
 # rediscluster imports
 from .crc import crc16
@@ -295,8 +296,9 @@ class NodeManager(object):
 
         # TODO: This shold not be constructed this way. It should update the name of the node in the node cache dict
         """
+        resolved_host = socket.gethostbyname(n["host"])
         if "name" not in n:
-            n["name"] = "{0}:{1}".format(n["host"], n["port"])
+            n["name"] = "{0}:{1}".format(resolved_host, n["port"])
 
     def make_node_obj(self, host, port, server_type):
         """
